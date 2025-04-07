@@ -88,7 +88,7 @@ def estimate_psd_fsm(signal, N_fft=128):
     return f, psd_smooth
 
 
-def Compute_Coherence_function(SCF_nonconj, SCF_conj, PSD, f_axis, alpha_axis, N):
+Compute_Coherence_function(SCF_nonconj, SCF_conj, PSD, f_axis, alpha_axis, N):
     """
     Compute the SCF ratio in a fully vectorized manner.
 
@@ -107,33 +107,33 @@ def Compute_Coherence_function(SCF_nonconj, SCF_conj, PSD, f_axis, alpha_axis, N
     
     # Create an extended frequency axis for PSD (assuming it corresponds to FFT bin locations)
     PSD_f_axis = np.linspace(f_axis[0], f_axis[-1], N)  # Full-resolution frequency grid for PSD
-    print(len(f_axis),len(PSD_f_axis), len(PSD))
+    print(len(f_axis),len(PSD_f_axis), len(PSD), PSD_f_axis.shape, PSD.shape)
     # Interpolate PSD onto the SCF frequency grid
     PSD_interp = np.interp(f_axis, PSD_f_axis, PSD)  # Interpolated PSD
 
+    
     # Compute f ± α/2 for all α and f at once
     f_plus = f_axis[None, :] + alpha_axis[:, None] / 2  # Shape: (num_alpha, num_f)
     f_minus = f_axis[None, :] - alpha_axis[:, None] / 2  # Shape: (num_alpha, num_f)
     f_alpha_conj = alpha_axis[:, None] / 2 - f_axis[None, :]  # Shape: (num_alpha, num_f)
     
-    f_plus_clipped = np.clip(f_plus, PSD_f_axis[0], PSD_f_axis[-1])
-    f_minus_clipped = np.clip(f_minus, PSD_f_axis[0], PSD_f_axis[-1])
-    f_alpha_conj_clipped = np.clip(f_alpha_conj, PSD_f_axis[0], PSD_f_axis[-1])
     # Interpolate PSD for these frequency shifts
-    PSD_f_plus = np.interp(f_plus_clipped, PSD_f_axis, PSD, left=np.nan, right=np.nan)
-    PSD_f_minus = np.interp(f_minus_clipped, PSD_f_axis, PSD, left=np.nan, right=np.nan)
-    PSD_f_alpha_conj = np.interp(f_alpha_conj_clipped, PSD_f_axis, PSD, left=np.nan, right=np.nan)
-  
+    PSD_f_plus = np.interp(f_plus, PSD_f_axis, PSD, left=0,right=0)
+    PSD_f_minus = np.interp(f_minus, PSD_f_axis, PSD, left=0, right=0)
+    PSD_f_alpha_conj = np.interp(f_alpha_conj, PSD_f_axis, PSD, left=0, right=0)
+    
     # Compute the denominator element-wise
     denominator_rho = np.sqrt(PSD_f_plus * PSD_f_minus)
     denominator_rho_conj = np.sqrt(PSD_f_plus * PSD_f_alpha_conj)
+    print("Coherence_denominator_shape", denominator_rho.shape)
+    print("Coherence_denominator_shape", denominator_rho_conj.shape)
     # Avoid division by zero
     denominator_rho[denominator_rho == 0] = np.nan
     denominator_rho_conj[denominator_rho_conj == 0] = np.nan
     # Compute the ratio (fully vectorized)
-    rho = SCF_nonconj/ denominator_rho
-    rho_conj =SCF_conj/denominator_rho_conj
-
+    rho = np.nan_to_num(SCF_nonconj/ denominator_rho, nan=0.0)
+    rho_conj = np.nan_to_num(SCF_conj/denominator_rho_conj, nan=0.0)
+    pdb.set_trace()
     return rho, rho_conj    
 
 

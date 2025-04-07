@@ -133,7 +133,7 @@ Compute_Coherence_function(SCF_nonconj, SCF_conj, PSD, f_axis, alpha_axis, N):
     # Compute the ratio (fully vectorized)
     rho = np.nan_to_num(SCF_nonconj/ denominator_rho, nan=0.0)
     rho_conj = np.nan_to_num(SCF_conj/denominator_rho_conj, nan=0.0)
-    pdb.set_trace()
+    #pdb.set_trace()
     return rho, rho_conj    
 
 

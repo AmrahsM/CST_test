@@ -88,7 +88,7 @@ def estimate_psd_fsm(signal, N_fft=128):
     return f, psd_smooth
 
 
-Compute_Coherence_function(SCF_nonconj, SCF_conj, PSD, f_axis, alpha_axis, N):
+def Compute_Coherence_function(SCF_nonconj, SCF_conj, PSD, f_axis, alpha_axis, N):
     """
     Compute the SCF ratio in a fully vectorized manner.
 

@@ -8,12 +8,43 @@ import matplotlib.pyplot as plt
 from scipy.signal import welch, find_peaks
 from scipy.fft import fft, ifft
 from scipy import signal
+from mpl_toolkits.mplot3d import Axes3D
 
 current_dir =os.getcwd()
 parent_dir=os.path.dirname(current_dir)
 
 def nextpow2(n):
     return int(np.ceil(np.log2(n)))
+
+
+def plot_3d(f_axis, alpha_axis, PSD_plot):
+
+    F, A = np.meshgrid(f_axis, alpha_axis, indexing='ij')
+
+    # Downsample for visualization (optional)
+    step_f = len(f_axis)   # e.g., 32768 // 64 = 512
+    step_a = len(alpha_axis) // 64
+    print("step_f, step_a", step_f, step_a, PSD_plot)
+
+    F_plot = F[::step_f, ::step_a]
+    A_plot = A[::step_f, ::step_a]
+    PSD_plot = PSD_plot[::step_f, ::step_a]
+
+    # Plot
+    fig = plt.figure(figsize=(10, 6))
+    ax = fig.add_subplot(111, projection='3d')
+
+    surf = ax.plot_surface(F_plot, A_plot, PSD_plot, cmap='viridis', edgecolor='none')
+
+    ax.set_title('3D PSD over f ± α/2')
+    ax.set_xlabel('Frequency (f)')
+    ax.set_ylabel('Cyclic Frequency (α)')
+    ax.set_zlabel('PSD')
+    fig.colorbar(surf, shrink=0.5, aspect=10)
+
+    plt.tight_layout()
+    plt.show()
+
 
 def plot_psd(data_samples, title=' ', N_psd=256):
     num_blocks = len(data_samples) // N_psd
@@ -73,7 +104,7 @@ def estimate_psd_fsm(signal, N_fft=128):
         psd_smooth (numpy array): Smoothed PSD estimate.
     """
     # Compute the periodogram (raw PSD estimate)
-    smoothing_window_length=N_fft/20 #5% of the N_fft
+    smoothing_window_length=N_fft/100 #5% of the N_fft
     X_f = np.fft.fftshift(np.fft.fft(signal, N_fft))  # Compute FFT and shift
     psd = np.abs(X_f) ** 2 / N_fft  # Compute power spectrum
 
@@ -88,7 +119,7 @@ def estimate_psd_fsm(signal, N_fft=128):
     return f, psd_smooth
 
 
-def Compute_Coherence_function(SCF_nonconj, SCF_conj, PSD, f_axis, alpha_axis, N):
+def Compute_Coherence_function(SCF, PSD, f_axis, alpha_axis, N, conj =False):
     """
     Compute the SCF ratio in a fully vectorized manner.
 
@@ -103,38 +134,46 @@ def Compute_Coherence_function(SCF_nonconj, SCF_conj, PSD, f_axis, alpha_axis, N
     - rho: 2D numpy array of shape (num_alpha, num_f), the normalized SCF ratio.
     """
 
-    num_alpha, num_f = SCF_conj.shape
+    num_alpha, num_f = SCF.shape
     
     # Create an extended frequency axis for PSD (assuming it corresponds to FFT bin locations)
     PSD_f_axis = np.linspace(f_axis[0], f_axis[-1], N)  # Full-resolution frequency grid for PSD
-    print(len(f_axis),len(PSD_f_axis), len(PSD), PSD_f_axis.shape, PSD.shape)
+    #print(len(f_axis),len(PSD_f_axis), len(PSD), PSD_f_axis.shape, PSD.shape)
     # Interpolate PSD onto the SCF frequency grid
-    PSD_interp = np.interp(f_axis, PSD_f_axis, PSD)  # Interpolated PSD
-
+    #PSD_interp = np.interp(f_axis, PSD_f_axis, PSD)  # Interpolated PSD
     
     # Compute f ± α/2 for all α and f at once
     f_plus = f_axis[None, :] + alpha_axis[:, None] / 2  # Shape: (num_alpha, num_f)
-    f_minus = f_axis[None, :] - alpha_axis[:, None] / 2  # Shape: (num_alpha, num_f)
-    f_alpha_conj = alpha_axis[:, None] / 2 - f_axis[None, :]  # Shape: (num_alpha, num_f)
     
+    
+    if (conj==True):
+        f_alpha_conj = alpha_axis[:, None] / 2 - f_axis[None, :]  # Shape: (num_alpha, num_f)
+    else: 
+        f_minus = f_axis[None, :] - alpha_axis[:, None] / 2  # Shape: (num_alpha, num_f)
     # Interpolate PSD for these frequency shifts
     PSD_f_plus = np.interp(f_plus, PSD_f_axis, PSD, left=0,right=0)
-    PSD_f_minus = np.interp(f_minus, PSD_f_axis, PSD, left=0, right=0)
-    PSD_f_alpha_conj = np.interp(f_alpha_conj, PSD_f_axis, PSD, left=0, right=0)
+    if (conj==True):
+        PSD_f_alpha_conj = np.interp(f_alpha_conj, PSD_f_axis, PSD, left=0, right=0)
+    else:    
+        PSD_f_minus = np.interp(f_minus, PSD_f_axis, PSD, left=0, right=0)
     
+    #print("PSD_f_plus:", PSD_f_plus, f_plus)
+    #pdb.set_trace()
     # Compute the denominator element-wise
-    denominator_rho = np.sqrt(PSD_f_plus * PSD_f_minus)
-    denominator_rho_conj = np.sqrt(PSD_f_plus * PSD_f_alpha_conj)
-    print("Coherence_denominator_shape", denominator_rho.shape)
-    print("Coherence_denominator_shape", denominator_rho_conj.shape)
+    if conj==False:
+        denominator_rho = np.sqrt(PSD_f_plus * PSD_f_minus)
+    else:    
+        denominator_rho = np.sqrt(PSD_f_plus * PSD_f_alpha_conj)
+    #print("Coherence_denominator_shape", denominator_rho.shape)
+    #print("Coherence_denominator_shape", denominator_rho_conj.shape)
     # Avoid division by zero
     denominator_rho[denominator_rho == 0] = np.nan
-    denominator_rho_conj[denominator_rho_conj == 0] = np.nan
+    #denominator_rho_conj[denominator_rho_conj == 0] = np.nan
     # Compute the ratio (fully vectorized)
-    rho = np.nan_to_num(SCF_nonconj/ denominator_rho, nan=0.0)
-    rho_conj = np.nan_to_num(SCF_conj/denominator_rho_conj, nan=0.0)
+    rho = np.nan_to_num(SCF/ denominator_rho, nan=0.0)
+    #rho_conj = np.nan_to_num(SCF_conj/denominator_rho_conj, nan=0.0)
     #pdb.set_trace()
-    return rho, rho_conj    
+    return rho
 
 
 def FAM_compute(data_sample):
@@ -178,12 +217,13 @@ def FAM_compute(data_sample):
     
    return SCF 
 
-def SSCA_Compute(data_sample, fs=1,DF=0.02, d_alpha=0.0001):
+def SSCA_Compute(data_sample, fs=1,DF=0.005, d_alpha=0.0001):
     
     N=len(data_sample)
     #Np = 2 ** nextpow2(fs / DF) # %Number of input channels, defined by the desired frequency resolution (DF) as Np=fs/DF, It must be a
                                 #power of 2 to avoid truncation or zero-padding in the FFT routines;
     Np=int(2**((np.log2(N))-9))
+    #N=N-Np
     print("N and Np Values:", N, Np)                         
     
     #channelization
@@ -191,11 +231,13 @@ def SSCA_Compute(data_sample, fs=1,DF=0.02, d_alpha=0.0001):
     
     pad_length = Np // 2
     X_padded = np.pad(data_sample,(pad_length, pad_length), mode='constant')
-    plot_psd(X_padded)
+    print(X_padded[0:Np//2+1])
+    #plot_psd(X_padded)
     # Create data_sample_copy and pad the last elements to zero
     # Initialize X and fill it with segments of data_sample_copy
     data_matrix = np.column_stack([X_padded[i:N + i] for i in range(Np)])   
-    a=np.kaiser(Np,12)
+    a=np.kaiser(Np,14)
+    #a=signal.windows.chebwin(Np, 90)
     a_normalized = a / np.sqrt(np.sum(a**2))
     data_matrix_windowed = data_matrix*a_normalized #signal.windows.chebwin(Np, 180)# *#np.kaiser(Np,5)signal.windows.chebwin(Np, 100)
     print("data_matrix_shape, window_shape, data_matrix_windowed_shape", data_matrix.shape, a.shape, data_matrix_windowed.shape)
@@ -205,6 +247,7 @@ def SSCA_Compute(data_sample, fs=1,DF=0.02, d_alpha=0.0001):
     print("FFT Done")
     # Step 2: Downconversion
     k = np.arange(-Np // 2, Np // 2)  # Range of k values
+    #print(k)
     n = np.arange(1, N + 1)  # Range of n values
 
     # Geneterate the Downconversion matrix E using broadcasting
@@ -227,7 +270,7 @@ def SSCA_Compute(data_sample, fs=1,DF=0.02, d_alpha=0.0001):
     X_nonconj = np.tile (X_nonconj_section[:, np.newaxis], (1, Np))
     #print("Preprocessing before 2nd FFT Done")
     ## Second FFT ## , norm='ortho', , norm='ortho'norm='ortho'
-    second_window=np.kaiser(N,6) # second_window.reshape(N,1)
+    second_window=np.kaiser(N,4) # second_window.reshape(N,1)
     second_window_normalized=second_window/np.sum(second_window) #second_window.reshape(N,1)
     XFFT2_conj = np.fft.fftshift(np.fft.fft(XD*X_conj*second_window_normalized.reshape(N,1), axis=0), axes=0)  # Shift zero frequency component to the center#1/N #signal.windows.chebwin(N, 90).reshape(N,1)
     XFFT2_nonconj = np.fft.fftshift(np.fft.fft(XD*X_nonconj*second_window_normalized.reshape(N,1), axis=0), axes=0) # Shift zero frequency component to the center#signal.windows.chebwin(N, 10).reshape(N,1)#*signal.windows.chebwin(N, at=100).reshape(N,1)
@@ -245,24 +288,29 @@ def SSCA_Compute(data_sample, fs=1,DF=0.02, d_alpha=0.0001):
 
     # Compute frequency and alpha matrices
     f_matrix = ((K_eq / (2 * Np)) - (Q_eq / (2 * N)))
-    alpha_matrix = (K_eq / Np) + (Q_eq / N)
-    print("F_matrix and Alpha_matrix shape", f_matrix.shape, alpha_matrix.shape)
+    alpha_matrix = ((K_eq / Np) + (Q_eq / N))
+    f_matrix_conj = ((K_eq / (2 * Np)) + (Q_eq / (2 * N)))
+    alpha_matrix_conj = ((K_eq / Np) - (Q_eq / N))
+    
+    print("F_matrix and Alpha_matrix min and max", f_matrix.min(), f_matrix.max(), alpha_matrix.min(), alpha_matrix.max())
     SCF_conj=np.zeros_like(M_conj)
     SCF_nonconj=np.zeros_like(M_nonconj)
 
     # Convert (F, Alpha) into valid integer indices for the new grid
     f_indices = np.round((f_matrix - f_matrix.min()) / (f_matrix.max() - f_matrix.min()) * (Np-1)).astype(int)
     alpha_indices = np.round((alpha_matrix - alpha_matrix.min()) / (alpha_matrix.max() - alpha_matrix.min()) * (N-1)).astype(int)
+    f_indices_conj = np.round((f_matrix_conj - f_matrix_conj.min()) / (f_matrix_conj.max() - f_matrix_conj.min()) * (Np-1)).astype(int)
+    alpha_indices_conj = np.round((alpha_matrix_conj - alpha_matrix_conj.min()) / (alpha_matrix_conj.max() - alpha_matrix_conj.min()) * (N-1)).astype(int)
     #print("f_indices, alpha_indices", f_indices.shape, alpha_indices.shape)
     #print("M_conj.shape:", M_conj.shape)
     #print("f_indices.shape:", f_indices.shape, f_indices[0:20])
     #print("alpha_indices.shape:", alpha_indices.shape, alpha_indices[0:20])
     # Perform direct assignment (mapping values)
-    SCF_conj[alpha_indices.T, f_indices.T] = M_conj
+    SCF_conj[alpha_indices_conj.T, f_indices_conj.T] = M_conj
     SCF_nonconj[alpha_indices.T, f_indices.T] = M_nonconj 
     #pdb.set_trace() 
 
-    return SCF_conj, SCF_nonconj
+    return SCF_conj, SCF_nonconj, f_matrix, alpha_matrix, f_matrix_conj, alpha_matrix_conj
 
 def adaptive_resample(signal_in, lower_cutoff, upper_cutoff, power=2, max_upsample=4, max_downsample=4):
     """
@@ -351,14 +399,14 @@ def plot_max_rho_stem(rho, cyclic_frequencies, title_txt= '', y_label=''):
 
 
 def main():
-    data_sample_path = '/home/mohitsharma/Desktop/Codes/MC/Source/signal_4000.tim'
+    data_sample_path = '/home/mohitsharma/Desktop/Codes/MC/Source/signal_1.tim'
     #data_sample_path = '/home/wmi-nuc-m/Documents/Codes/MC/Source/signal_1.tim'
     #data_sample_path ='/home/wmi-nuc-m/Documents/Codes/MC/Data/ml.2022r2/raw/signal_1.tim'
     #data_sample_path ='/home/wmi-nuc-m/Documents/Codes/MC/Data/CSPB2018/CSPB.ML_.2018R1_1/Batch_Dir_1/signal_1.tim'
     data_samples= read_binary(data_sample_path)
     #data_samples=data_samples**2
     noise_floor=3 #(in dB)
-    print(data_samples[0:10])
+    #print(data_samples[0:10])
     
     frequencies, power_spectrum = welch(data_samples, window='hamming', nperseg=1024, noverlap=512, detrend=False, return_onesided=False)
 
@@ -409,16 +457,19 @@ def main():
     ##### CFO_Shift_Correction
     #print(data_samples[0:20], data_samples.dtype)
     CFO=shifted_frequencies[np.argmax(shifted_spectrums)]
+    print("CFO:", CFO)
     CFO_corrected_data=data_samples*np.exp(-1j*2*np.pi*CFO*n)
     
     #resampled_data = adaptive_resample(CFO_corrected_data,shifted_frequencies[indices][0], shifted_frequencies[indices][-1])
     resampled_data=signal.resample_poly(CFO_corrected_data, 1, 1)
     N_psd=len(resampled_data) # number of fft points in PSD estimates using FSM
-    SCF_conj, SCF_nonconj=SSCA_Compute(resampled_data)
-    cyclic_frequencies = np.linspace(-1, 1, SCF_conj.shape[0])  # Approximate cyclic frequencies
+    SCF_conj, SCF_nonconj, f_matrix, alpha_matrix, f_matrix_conj, alpha_matrix_conj =SSCA_Compute(resampled_data)
+    cyclic_frequencies = np.linspace(alpha_matrix.min(), alpha_matrix.max(), alpha_matrix.shape[1])  # Approximate cyclic frequencies
     #print("zero_cyclic frequency location", np.argmin(np.abs(cyclic_frequencies)))
-    baseband_frequencies = np.linspace(-0.5, 0.5, SCF_conj.shape[1])
+    baseband_frequencies = np.linspace(f_matrix.min(), f_matrix.max(), f_matrix.shape[0])
     f,PSD_estimate = estimate_psd_fsm(resampled_data, N_psd)
+    baseband_frequencies_conj = np.linspace(f_matrix_conj.min(), f_matrix_conj.max(), f_matrix_conj.shape[0])
+    cyclic_frequencies_conj = np.linspace(alpha_matrix_conj.min(), alpha_matrix_conj.max(), alpha_matrix_conj.shape[1])
     plt.figure()
     plt.plot(f, PSD_estimate)
     plt.grid(True)
@@ -427,11 +478,12 @@ def main():
     plt.xlabel("Frequency [Hz]")
     plt.ylabel("Power/Frequency [dB/Hz]")
     plt.show()
-    rho, rho_conj = Compute_Coherence_function(SCF_nonconj, SCF_conj, PSD_estimate, baseband_frequencies, cyclic_frequencies, N_psd)
+    rho = Compute_Coherence_function(SCF_nonconj, PSD_estimate, baseband_frequencies, cyclic_frequencies, N_psd, conj=False)
+    rho_conj = Compute_Coherence_function(SCF_conj, PSD_estimate, baseband_frequencies_conj, cyclic_frequencies_conj, N_psd, conj=True)
     plot_max_rho_stem(rho, cyclic_frequencies, title_txt = 'Non-Conjugate Cycle Frequencies', y_label='Non-conjugate Coherence')
-    plot_max_rho_stem(rho_conj, cyclic_frequencies, title_txt='Conjugate Cycle Frequencies', y_label='Conjugate Coherence')
+    plot_max_rho_stem(rho_conj, cyclic_frequencies_conj, title_txt='Conjugate Cycle Frequencies', y_label='Conjugate Coherence')
     plot_max_rho_stem(SCF_nonconj, cyclic_frequencies, title_txt = 'Non-Conjugate Cycle Frequencies based on SCF', y_label='SCF_nonconj_magnitude')
-    plot_max_rho_stem(SCF_conj, cyclic_frequencies, title_txt='Conjugate Cycle Frequencies based on SCF', y_label='SCF_conj_magnitude')
+    plot_max_rho_stem(SCF_conj, cyclic_frequencies_conj, title_txt='Conjugate Cycle Frequencies based on SCF', y_label='SCF_conj_magnitude')
     
       
         

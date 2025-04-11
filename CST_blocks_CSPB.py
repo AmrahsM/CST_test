@@ -289,8 +289,8 @@ def SSCA_Compute(data_sample, fs=1,DF=0.005, d_alpha=0.0001):
     # Compute frequency and alpha matrices
     f_matrix = ((K_eq / (2 * Np)) - (Q_eq / (2 * N)))
     alpha_matrix = ((K_eq / Np) + (Q_eq / N))
-    f_matrix_conj = ((K_eq / (2 * Np)) + (Q_eq / (2 * N)))
-    alpha_matrix_conj = ((K_eq / Np) - (Q_eq / N))
+    f_matrix_conj = ((K_eq / (2 * Np)) - (Q_eq / (2 * N)))
+    alpha_matrix_conj = (K_eq / Np) + (Q_eq / N)
     
     print("F_matrix and Alpha_matrix min and max", f_matrix.min(), f_matrix.max(), alpha_matrix.min(), alpha_matrix.max())
     SCF_conj=np.zeros_like(M_conj)
@@ -299,18 +299,18 @@ def SSCA_Compute(data_sample, fs=1,DF=0.005, d_alpha=0.0001):
     # Convert (F, Alpha) into valid integer indices for the new grid
     f_indices = np.round((f_matrix - f_matrix.min()) / (f_matrix.max() - f_matrix.min()) * (Np-1)).astype(int)
     alpha_indices = np.round((alpha_matrix - alpha_matrix.min()) / (alpha_matrix.max() - alpha_matrix.min()) * (N-1)).astype(int)
-    f_indices_conj = np.round((f_matrix_conj - f_matrix_conj.min()) / (f_matrix_conj.max() - f_matrix_conj.min()) * (Np-1)).astype(int)
-    alpha_indices_conj = np.round((alpha_matrix_conj - alpha_matrix_conj.min()) / (alpha_matrix_conj.max() - alpha_matrix_conj.min()) * (N-1)).astype(int)
+    #f_indices_conj = np.round((f_matrix_conj - f_matrix_conj.min()) / (f_matrix_conj.max() - f_matrix_conj.min()) * (Np-1)).astype(int)
+    #alpha_indices_conj = np.round((alpha_matrix_conj - alpha_matrix_conj.min()) / (alpha_matrix_conj.max() - alpha_matrix_conj.min()) * (N-1)).astype(int)
     #print("f_indices, alpha_indices", f_indices.shape, alpha_indices.shape)
     #print("M_conj.shape:", M_conj.shape)
     #print("f_indices.shape:", f_indices.shape, f_indices[0:20])
     #print("alpha_indices.shape:", alpha_indices.shape, alpha_indices[0:20])
     # Perform direct assignment (mapping values)
-    SCF_conj[alpha_indices_conj.T, f_indices_conj.T] = M_conj
+    SCF_conj[alpha_indices.T, f_indices.T] = M_conj
     SCF_nonconj[alpha_indices.T, f_indices.T] = M_nonconj 
     #pdb.set_trace() 
 
-    return SCF_conj, SCF_nonconj, f_matrix, alpha_matrix, f_matrix_conj, alpha_matrix_conj
+    return SCF_conj, SCF_nonconj, f_matrix, alpha_matrix #, f_matrix_conj, alpha_matrix_conj
 
 def adaptive_resample(signal_in, lower_cutoff, upper_cutoff, power=2, max_upsample=4, max_downsample=4):
     """
@@ -463,13 +463,15 @@ def main():
     #resampled_data = adaptive_resample(CFO_corrected_data,shifted_frequencies[indices][0], shifted_frequencies[indices][-1])
     resampled_data=signal.resample_poly(CFO_corrected_data, 1, 1)
     N_psd=len(resampled_data) # number of fft points in PSD estimates using FSM
-    SCF_conj, SCF_nonconj, f_matrix, alpha_matrix, f_matrix_conj, alpha_matrix_conj =SSCA_Compute(resampled_data)
+    SCF_conj, SCF_nonconj, f_matrix, alpha_matrix =SSCA_Compute(resampled_data)
     cyclic_frequencies = np.linspace(alpha_matrix.min(), alpha_matrix.max(), alpha_matrix.shape[1])  # Approximate cyclic frequencies
     #print("zero_cyclic frequency location", np.argmin(np.abs(cyclic_frequencies)))
     baseband_frequencies = np.linspace(f_matrix.min(), f_matrix.max(), f_matrix.shape[0])
     f,PSD_estimate = estimate_psd_fsm(resampled_data, N_psd)
-    baseband_frequencies_conj = np.linspace(f_matrix_conj.min(), f_matrix_conj.max(), f_matrix_conj.shape[0])
-    cyclic_frequencies_conj = np.linspace(alpha_matrix_conj.min(), alpha_matrix_conj.max(), alpha_matrix_conj.shape[1])
+    # baseband_frequencies_conj = np.linspace(f_matrix_conj.min(), f_matrix_conj.max(), f_matrix_conj.shape[0])
+    # cyclic_frequencies_conj = np.linspace(alpha_matrix_conj.min(), alpha_matrix_conj.max(), alpha_matrix_conj.shape[1])
+    #baseband_frequencies_conj = np.linspace(-0.5,0.5,f_matrix_conj.shape[0])
+    #cyclic_frequencies_conj = np.linspace(-1,1,alpha_matrix_conj.shape[1])
     plt.figure()
     plt.plot(f, PSD_estimate)
     plt.grid(True)
@@ -479,11 +481,11 @@ def main():
     plt.ylabel("Power/Frequency [dB/Hz]")
     plt.show()
     rho = Compute_Coherence_function(SCF_nonconj, PSD_estimate, baseband_frequencies, cyclic_frequencies, N_psd, conj=False)
-    rho_conj = Compute_Coherence_function(SCF_conj, PSD_estimate, baseband_frequencies_conj, cyclic_frequencies_conj, N_psd, conj=True)
+    rho_conj = Compute_Coherence_function(SCF_conj, PSD_estimate, baseband_frequencies, cyclic_frequencies, N_psd, conj=True)
     plot_max_rho_stem(rho, cyclic_frequencies, title_txt = 'Non-Conjugate Cycle Frequencies', y_label='Non-conjugate Coherence')
-    plot_max_rho_stem(rho_conj, cyclic_frequencies_conj, title_txt='Conjugate Cycle Frequencies', y_label='Conjugate Coherence')
+    plot_max_rho_stem(rho_conj, cyclic_frequencies, title_txt='Conjugate Cycle Frequencies', y_label='Conjugate Coherence')
     plot_max_rho_stem(SCF_nonconj, cyclic_frequencies, title_txt = 'Non-Conjugate Cycle Frequencies based on SCF', y_label='SCF_nonconj_magnitude')
-    plot_max_rho_stem(SCF_conj, cyclic_frequencies_conj, title_txt='Conjugate Cycle Frequencies based on SCF', y_label='SCF_conj_magnitude')
+    plot_max_rho_stem(SCF_conj, cyclic_frequencies, title_txt='Conjugate Cycle Frequencies based on SCF', y_label='SCF_conj_magnitude')
     
       
         
